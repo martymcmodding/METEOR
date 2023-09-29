@@ -48,7 +48,7 @@
 /*=============================================================================
 	UI Uniforms
 =============================================================================*/
-
+/*
 uniform float4 tempF1 <
     ui_type = "drag";
     ui_min = -100.0;
@@ -66,7 +66,7 @@ uniform float4 tempF3 <
     ui_min = -100.0;
     ui_max = 100.0;
 > = float4(1,1,1,1);
-
+*/
 // -- Sharpening --
 #define sharp_strength      2.07   
 #define sharp_clamp         0.048  
@@ -121,7 +121,7 @@ uniform float4 tempF3 <
 texture ColorInputTex : COLOR;
 sampler ColorInput 	{ Texture = ColorInputTex;  };
 
-#include "qUINT\Global.fxh"
+#include "MartysMods/mmx_global.fxh"
 
 struct VSOUT
 {
@@ -566,7 +566,7 @@ float4 SepiaPass( float4 colorInput )
 VSOUT MainVS(in uint id : SV_VertexID)
 {
     VSOUT o;
-    VS_FullscreenTriangle(id, o.vpos, o.uv); //use original fullscreen triangle VS
+    FullscreenTriangleVS(id, o.vpos, o.uv);
     return o;
 }
 
@@ -593,36 +593,13 @@ void MainPS(in VSOUT i, out float3 o : SV_Target0)
       //levels
     o = linearstep(10.0/255.0, 1.0, o); //toddyhancer used 10/255 as blackpoint
 
-    if(tempF2.x > 0) o = DPXPass(o.xyzz).xyz;
-    if(tempF2.y > 0) o = TonemapPass(o.xyzz).xyz;
-    if(tempF2.z > 0) o = VibrancePass(o.xyzz).xyz;
-    if(tempF2.w > 0) o = CurvesPass(o.xyzz).xyz;
-    if(tempF1.x > 0) o = SepiaPass(o.xyzz).xyz;
-
-
-    //if(i.uv.x < 0.5) o = tex2D(ColorInput, i.uv).rgb; 
+    o = DPXPass(o.xyzz).xyz;
+    o = TonemapPass(o.xyzz).xyz;
+    o = VibrancePass(o.xyzz).xyz;
+    o = CurvesPass(o.xyzz).xyz;
+    o = SepiaPass(o.xyzz).xyz;
 }
 
-void MainPS2(in VSOUT i, out float3 o : SV_Target0)
-{  
-    float3 ori = tex2D(ColorInput, i.uv).rgb; 
-    float3 sharp_strength_luma = (float3(0.2126, 0.7152, 0.0722) * sharp_strength);   
-
-    //luma sharpen pattern 4
-    float3 blur_ori = tex2D(ColorInput, i.uv + BUFFER_PIXEL_SIZE *  float2(0.5,-offset_bias)).rgb;  // South South East
-    blur_ori += tex2D(ColorInput, i.uv + BUFFER_PIXEL_SIZE *        float2(-offset_bias,-0.5)).rgb; // West South West
-    blur_ori += tex2D(ColorInput, i.uv + BUFFER_PIXEL_SIZE *        float2(offset_bias,0.5)).rgb; // East North East
-    blur_ori += tex2D(ColorInput, i.uv + BUFFER_PIXEL_SIZE *        float2(-0.5, offset_bias)).rgb; // North North West
-    blur_ori *= 0.25;
-    sharp_strength_luma *= 0.666;
-
-    float3 sharp = ori - blur_ori; 
-    float4 sharp_strength_luma_clamp = float4(sharp_strength_luma * (0.5 / sharp_clamp),0.5);
-    float sharp_luma = saturate(dot(float4(sharp,1.0), sharp_strength_luma_clamp)); //Calculate the luma, adjust the strength, scale up and clamp
-    sharp_luma = (sharp_clamp * 2.0) * sharp_luma - sharp_clamp; 
-
-    o = ori + sharp_luma;
-}
 
 /*=============================================================================
 	Techniques
@@ -634,14 +611,5 @@ technique MartysMods_Toddyhancer
 	{
 		VertexShader = MainVS;
 		PixelShader  = MainPS;
-	}      
-}
-
-technique MartysMods_ToddyhancerSharpenOnly
-{    
-    pass
-	{
-		VertexShader = MainVS;
-		PixelShader  = MainPS2;
 	}      
 }
