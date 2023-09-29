@@ -1,15 +1,15 @@
 /*=============================================================================
                                                            
-  .d88888b.  8888888b.  888888b.  8888888 88888888888     d8888 888      
- d88P" "Y88b 888   Y88b 888  "88b   888       888        d88888 888      
- 888     888 888    888 888  .88P   888       888       d88P888 888      
- 888     888 888   d88P 8888888K.   888       888      d88P 888 888      
- 888     888 8888888P"  888  "Y88b  888       888     d88P  888 888      
- 888     888 888 T88b   888    888  888       888    d88P   888 888      
- Y88b. .d88P 888  T88b  888   d88P  888       888   d8888888888 888      
-  "Y88888P"  888   T88b 8888888P" 8888888     888  d88P     888 88888888   
+ 888b     d888 8888888888 88888888888 8888888888 .d88888b.  8888888b.  
+ 8888b   d8888 888            888     888       d88P" "Y88b 888   Y88b 
+ 88888b.d88888 888            888     888       888     888 888    888 
+ 888Y88888P888 8888888        888     8888888   888     888 888   d88P 
+ 888 Y888P 888 888            888     888       888     888 8888888P"  
+ 888  Y8P  888 888            888     888       888     888 888 T88b   
+ 888   "   888 888            888     888       Y88b. .d88P 888  T88b  
+ 888       888 8888888888     888     8888888888 "Y88888P"  888   T88b 
 
-  Auxiliary Shaders                                                          
+  Marty's Extra Effects for ReShade                                                          
                                                                             
     Copyright (c) Pascal Gilcher. All rights reserved.
     
@@ -295,17 +295,17 @@ void MainPS(in VSOUT i, out float3 o : SV_Target0)
 
 technique MartysMods_LocalLaplacian
 <
-    ui_label = "ORBITAL Local Laplacian";
+    ui_label = "METEOR Local Laplacian";
     ui_tooltip =        
         "                          MartysMods - Local Laplacian                        \n"
-        "                           Auxiliary Effects (ORBITAL)                        \n"
+        "                   Marty's Extra Effects for ReShade (METEOR)                 \n"
         "______________________________________________________________________________\n"
         "\n"
 
-        "ORBITAL Local Laplacian is an implementation of the 'Fast Local Laplacian'.   \n"
+        "METEOR Local Laplacian is an implementation of the 'Fast Local Laplacian'.   \n"
         "FLL is state of the art in terms of local contrast enhancement and the backbone\n"
         "of ADOBE Lightroom's Clarity/Texture/Dehaze feature.                          \n"
-        "ORBITAL Local Laplacian is the only realtime capable implementation so far.   \n"
+        "METEOR Local Laplacian is the only realtime capable implementation so far.   \n"
         "\n"
         "\n"
         "Visit https://martysmods.com for more information.                            \n"
