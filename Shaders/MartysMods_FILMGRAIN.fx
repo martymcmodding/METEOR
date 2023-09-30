@@ -240,12 +240,12 @@ float next_rand_single(inout uint rng)
 //using sqrt for GUI control to make the perceived intensity proportional to slider value
 uint grain_intensity_to_halide_count()
 {
-    return uint(1 + 127 * saturate(2.0 - pow(GRAIN_INTENSITY, 0.1) * 2.0));
+    return uint(1 + 127 * saturate(2.0 -(1-(1-GRAIN_INTENSITY)*(1-GRAIN_INTENSITY)) * 2.0));
 }
 
 float grain_intensity_to_blend()
 {
-    return saturate(pow(GRAIN_INTENSITY, 0.1) * 2.0);
+    return saturate((1-(1-GRAIN_INTENSITY)*(1-GRAIN_INTENSITY)) * 2.0);
 }
 
 float2 boxmuller(float2 u)
