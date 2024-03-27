@@ -65,6 +65,8 @@ uniform float HDR_WHITEPOINT <
 	Textures, Samplers, Globals, Structs
 =============================================================================*/
 
+#include ".\MartysMods\mmx_global.fxh"
+
 texture ColorInputTex : COLOR;
 sampler ColorInput 	{ Texture = ColorInputTex; };
 
@@ -73,13 +75,30 @@ sampler sAccumTex	    	{ Texture = AccumTex; 	};
 texture StateTex      	    { Width = 1;   Height = 1;  Format = RG32F;};
 sampler sStateTex	        { Texture = StateTex; MipFilter = POINT; MagFilter = POINT; MinFilter = POINT;	};
 
+//#undef _COMPUTE_SUPPORTED
+
+#if _COMPUTE_SUPPORTED
+storage stAccumTex	    	{ Texture = AccumTex; 	};
+storage stStateTex	    	{ Texture = StateTex; 	};
+#endif 
+
 uniform float TIMER < source = "timer"; >;
 uniform uint FRAMECOUNT  < source = "framecount"; >;
+
+#define CEIL_DIV(num, denom) ((((num) - 1) / (denom)) + 1)
 
 struct VSOUT
 {
 	float4 vpos : SV_Position;
     float4 uv   : TEXCOORD0;
+};
+
+struct CSIN 
+{
+    uint3 groupthreadid     : SV_GroupThreadID;         
+    uint3 groupid           : SV_GroupID;            
+    uint3 dispatchthreadid  : SV_DispatchThreadID;     
+    uint threadid           : SV_GroupIndex;
 };
 
 /*=============================================================================
@@ -107,6 +126,38 @@ float3 hdr_to_sdr(float3 c, float w)
 /*=============================================================================
 	Shader Entry Points
 =============================================================================*/
+
+#if _COMPUTE_SUPPORTED
+void AccumCS(in CSIN i)
+{
+    [branch]
+    if(!TAKE_SHOT)
+    {
+        [branch]
+        if(i.dispatchthreadid.x + i.dispatchthreadid.y == 0)
+           tex2Dstore(stStateTex, int2(0, 0), float4(TIMER, FRAMECOUNT % 16777216, 0, 0));//well if you're REALLY unlucky this goes wrong...
+        return;
+    } 
+
+    [branch]
+    if(any(i.dispatchthreadid.xy >= BUFFER_SCREEN_SIZE)) 
+        return; 
+
+    float2 state = tex2Dfetch(stStateTex, int2(0, 0)).xy;  
+    bool accumulate = ((TIMER - state.x) < EXPOSURE_TIME * 1000.0); //ms to s
+
+    [branch]if(!accumulate) return;
+
+    float weight = saturate(rcp(FRAMECOUNT - state.y + 1e-7));  
+    float4 curr  = tex2Dfetch(ColorInput, i.dispatchthreadid.xy);
+
+    [flatten]if(USE_HDR_CAPTURE) curr.rgb = sdr_to_hdr(curr.rgb, exp2(HDR_WHITEPOINT));
+
+     float4 accum = tex2Dfetch(stAccumTex, i.dispatchthreadid.xy);
+    accum = lerp(accum, curr, weight);
+    tex2Dstore(stAccumTex, i.dispatchthreadid.xy, accum);    
+}
+#endif
 
 float4 StateTrackVS(in uint id : SV_VertexID) : SV_Position
 {    
@@ -149,26 +200,29 @@ VSOUT MainVS(in uint id : SV_VertexID)
 {    
     VSOUT o;
     o.uv.x = id == 2 ? 2.0 : 0.0;
-	o.uv.y = id == 1 ? -1.0 : 1.0;    
-    o.vpos.xy = TAKE_SHOT ? o.uv.xy * float2(2, -2) + float2(-1, 1) : 0;
+	o.uv.y = id == 1 ? -1.0 : 1.0;  
+    float2 state = tex2Dfetch(sStateTex, int2(0, 0)).xy;
+    o.vpos.xy = state.x == 0 || !TAKE_SHOT ? 0 : o.uv.xy * float2(2, -2) + float2(-1, 1); //don't produce a blackscreen when someone left the capture open and reloaded shaders
     o.vpos.zw = float2(0, 1);
     return o;
 }
 
 void MainPS(in VSOUT i, out float3 o : SV_Target)
-{
+{   
     o = tex2D(sAccumTex, i.uv.xy).rgb;
     if(USE_HDR_CAPTURE) o = hdr_to_sdr(o, exp2(HDR_WHITEPOINT));
 
-    if(!SHOW_PROGRESS_BAR) return;
+    [branch]
+    if(SHOW_PROGRESS_BAR)
+    {
+        float progress = saturate((TIMER -  tex2Dfetch(sStateTex, int2(0, 0)).x) * 0.001 / EXPOSURE_TIME);
+        float3 window = smoothstep(float3(-0.1, -0.1, -0.01), float3(0.1, -0.1 + progress * 0.2, 0.01), i.uv.xxy - 0.5);
 
-    float progress = saturate((TIMER - tex2Dfetch(sStateTex, int2(0, 0), 0).x) * 0.001 / EXPOSURE_TIME);
-    float3 window = smoothstep(float3(-0.1, -0.1, -0.01), float3(0.1, -0.1 + progress * 0.2, 0.01), i.uv.xxy - 0.5);
+        float bar = all(saturate(window.yz - window.yz * window.yz));
+        float bg = all(saturate(window.xz - window.xz * window.xz));
 
-    float bar = all(saturate(window.yz - window.yz * window.yz));
-    float bg = all(saturate(window.xz - window.xz * window.xz));
-
-    o = progress < 1.0 ? o * (1 - bg * 0.5) + bar : o;
+        o = progress < 1.0 ? o * (1 - bg * 0.5) + bar : o;
+    }
 }
 
 /*=============================================================================
@@ -193,6 +247,9 @@ technique MartysMods_LongExposure
         "______________________________________________________________________________";
 >
 {
+#if _COMPUTE_SUPPORTED
+    pass { ComputeShader = AccumCS<16, 16>; DispatchSizeX = CEIL_DIV(BUFFER_WIDTH, 16); DispatchSizeY = CEIL_DIV(BUFFER_HEIGHT, 16); }
+#else 
     pass
     {
         VertexShader = StateTrackVS;
@@ -210,6 +267,7 @@ technique MartysMods_LongExposure
         SrcBlend = SRCALPHA;
         DestBlend = INVSRCALPHA;
     }
+#endif
     pass
     {
         VertexShader = MainVS;
