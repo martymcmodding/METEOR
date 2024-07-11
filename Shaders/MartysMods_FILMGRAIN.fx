@@ -85,6 +85,14 @@ uniform float GRAIN_SAT <
     ui_category = "Parameters for ISO Noise";
 > = 1.0;
 
+uniform bool GRAIN_USE_BAYER <
+    ui_label = "Bayer Matrix RGB Weighting";
+    ui_tooltip = "Camera Sensors allocate twice as much area to green pixel\n"
+                 "thus reducing the noise sigma by sqrt(2) for green.      \n"
+                 "This causes the grain to adopt a pink hue in dark areas  \n";
+    ui_category = "Global";
+> = true;
+
 uniform float GRAIN_SIZE <
     ui_type = "drag";
     ui_label = "Grain Size";
@@ -106,13 +114,13 @@ uniform float FILM_CURVE_TOE <
     ui_label = "Analog Film Shadow Emphasis";
     ui_category = "Parameters for Analog Film Grain";
 > = 0.0;
-/*
+
 uniform float4 tempF1 <
     ui_type = "drag";
     ui_min = -100.0;
     ui_max = 100.0;
 > = float4(1,1,1,1);
-
+/*
 uniform float4 tempF2 <
     ui_type = "drag";
     ui_min = -100.0;
@@ -218,21 +226,23 @@ float3 filmic_curve(float3 x, float toe_strength, float gamma)
     return (gx + x) / (gx + 1);
 }
 
-float4 next_rand(inout uint rng)
+float2 uint_to_rand_2(uint u)
 {
-    float4 rand01;
-    //need 16 bit rand here to avoid quantization of the output (N values for rand seed == N possible binomial outcomes)
-    rng = lowbias32(rng);      
-    rand01.xy = frac(((rng >> uint2(0, 16)) & 0xFFFF) * rcp(0xFFFF));
-    rng = lowbias32(rng);      
-    rand01.zw = frac(((rng >> uint2(0, 16)) & 0xFFFF) * rcp(0xFFFF));
-    return rand01;
+    //move 16 bits into upper 16 bits of mantissa, mask out everything else, set exponent to 1, subtract 1.
+    return asfloat((uint2(u << 7u, u >> 9u) & 0x7fff80u) | 0x3f800000u) - 1.0;
 }
 
-float next_rand_single(inout uint rng)
-{   
-    rng = lowbias32(rng);      
-    return float(rng) * exp2(-32.0);
+//low quality advancing random generator, best initialized with something hq
+float4 next_rand_lq(inout uint rng)
+{
+    float4 rand;
+    //rng = rng * 1664525u + 1013904223u;//shitty lcg
+    rng = lowbias32(rng);
+    rand.xy = uint_to_rand_2(rng);    
+    //rng = rng * 1664525u + 1013904223u;
+    rng = lowbias32(rng);
+    rand.zw = uint_to_rand_2(rng);
+    return rand;
 }
 
 //grain intensity is more intuitive, however halide crystal count is what we need for the simulation
@@ -251,7 +261,7 @@ float grain_intensity_to_blend()
 float2 boxmuller(float2 u)
 {
     float2 g; sincos(u.x * TAU, g.x, g.y);
-    return g * sqrt(-2.0 * log(u.y + 1e-6));
+    return g * sqrt(-2.0 * log(1.0 - u.y));//1-u cuz [0,1) -> (0,1] for log(0) = -inf
 }
 
 float3 boxmuller(float3 u)
@@ -260,7 +270,7 @@ float3 boxmuller(float3 u)
     g.z = u.y * 2.0 - 1.0;
     sincos(u.x * TAU, g.x, g.y);
     g.xy *= sqrt(saturate(1.0 - g.z * g.z));        
-    return g * sqrt(-2.0 * log(u.z + 1e-6));
+    return g * sqrt(-2.0 * log(1.0 - u.y));
 }
 
 /*=============================================================================
@@ -286,7 +296,7 @@ void PoissonLUTPS(in VSOUT i, out float4 o : SV_Target0)
 
     o = 0;    
     [loop]for(int g = 0; g < num_grains; g++) 
-        o += step(next_rand(rng), p);
+        o += step(next_rand_lq(rng), p);
         
     o /= num_grains;
 }
@@ -297,7 +307,7 @@ void ApplyPoissonPS2(in VSOUT i, out float3 o : SV_Target0)
 
     uint2 p = uint2(i.vpos.xy); 
     uint rng = lowbias32(lowbias32(p.y) + p.x);
-    float4 rand01 = next_rand(rng);
+    float4 rand01 = next_rand_lq(rng);
 
     float3 tcol = tex2Dfetch(ColorInput, p).rgb;
     float3 poisson = 0;
@@ -335,7 +345,7 @@ void FilmDiffusionPS(in VSOUT i, out float3 o : SV_Target0)
     {
         uint2 tp = p + int2(x, y);
         uint rng = lowbias32(lowbias32(tp.y) + tp.x);
-        float4 rand01 = next_rand(rng);
+        float4 rand01 = next_rand_lq(rng);
         float3 tcol = tex2Dfetch(sGrainIntermediateTex, tp).rgb;
         tcol = to_linear(tcol);
 
@@ -378,17 +388,16 @@ void ApplySensorNoisePS(in VSOUT i, out float3 o : SV_Target0)
     uint2 p = uint2(i.vpos.xy); 
     uint rng = lowbias32(lowbias32(p.y) + p.x);
     if(ANIMATE) rng += FRAMECOUNT;
-    float3 u3 = next_rand(rng).xyz;
+    float3 u3 = next_rand_lq(rng).xyz;
 
     //3D box muller for 3 uncorrelated gaussian distributed noise values
     float3 gaussian = boxmuller(u3);
 
     [branch]
     if(FILM_MODE == FILM_MODE_COLOR)
-    {
-        //variance of 3 added gaussians with sigma 1 is 3, stddev then sqrt(3)
-        //that means we need to divide by sqrt of 3 to normalize variance for the desaturated case. Good enough for linear interp :P
-        gaussian = lerp(dot(gaussian, 0.333 * sqrt(3.0)), gaussian, GRAIN_SAT);
+    {        
+        gaussian.g *= GRAIN_USE_BAYER > 0.5 ? 0.7071 : 1; //monte carlo
+        gaussian = lerp(gaussian.xxx, gaussian, GRAIN_SAT);
         o = to_hdr(o);
         o += gaussian * GRAIN_INTENSITY * GRAIN_INTENSITY * 0.35;
         o = from_hdr(o);
