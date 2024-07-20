@@ -85,8 +85,6 @@ storage stStateTex	    	{ Texture = StateTex; 	};
 uniform float TIMER < source = "timer"; >;
 uniform uint FRAMECOUNT  < source = "framecount"; >;
 
-#define CEIL_DIV(num, denom) ((((num) - 1) / (denom)) + 1)
-
 struct VSOUT
 {
 	float4 vpos : SV_Position;
