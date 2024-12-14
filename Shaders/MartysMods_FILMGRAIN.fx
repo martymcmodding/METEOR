@@ -61,11 +61,6 @@ uniform int GRAIN_TYPE <
     ui_category = "Global";
 > = 0;
 
-uniform bool ANIMATE <
-    ui_label = "Animate Grain";
-    ui_category = "Global";
-> = false;
-
 #define GRAIN_TYPE_ANALOG        0
 #define GRAIN_TYPE_DIGITAL       1
 
@@ -76,6 +71,11 @@ uniform float GRAIN_INTENSITY <
     ui_max = 1.0;
     ui_category = "Global";
 > = 0.85;
+
+uniform bool ANIMATE <
+    ui_label = "Animate Grain";
+    ui_category = "Global";
+> = false;
 
 uniform float GRAIN_SAT <
     ui_type = "drag";
@@ -90,7 +90,7 @@ uniform bool GRAIN_USE_BAYER <
     ui_tooltip = "Camera Sensors allocate twice as much area to green pixel\n"
                  "thus reducing the noise sigma by sqrt(2) for green.      \n"
                  "This causes the grain to adopt a pink hue in dark areas  \n";
-    ui_category = "Global";
+    ui_category = "Parameters for ISO Noise";
 > = true;
 
 uniform float GRAIN_SIZE <
@@ -114,13 +114,13 @@ uniform float FILM_CURVE_TOE <
     ui_label = "Analog Film Shadow Emphasis";
     ui_category = "Parameters for Analog Film Grain";
 > = 0.0;
-
+/*
 uniform float4 tempF1 <
     ui_type = "drag";
     ui_min = -100.0;
     ui_max = 100.0;
 > = float4(1,1,1,1);
-/*
+
 uniform float4 tempF2 <
     ui_type = "drag";
     ui_min = -100.0;
@@ -149,9 +149,10 @@ sampler ColorInput 	{ Texture = ColorInputTex; };
 
 texture PoissonLookupTex            { Width = NUM_COLORS;   Height = NUM_TRIALS;   Format = RGBA8;  };
 sampler sPoissonLookupTex           { Texture = PoissonLookupTex; };
+storage stPoissonLookupTex          { Texture = PoissonLookupTex; };
 
-texture GrainIntermediateTex            { Width = BUFFER_WIDTH;   Height = BUFFER_HEIGHT;   Format = RGBA8;  };
-sampler sGrainIntermediateTex           { Texture = GrainIntermediateTex; };
+texture GrainIntermediateTex  < pooled = true; > { Width = BUFFER_WIDTH;   Height = BUFFER_HEIGHT;   Format = RGBA16F;  };
+sampler sGrainIntermediateTex                    { Texture = GrainIntermediateTex; };
 
 uniform uint FRAMECOUNT < source = "framecount"; >;
 
@@ -162,6 +163,14 @@ struct VSOUT
 {
     float4 vpos : SV_Position;
     float2 uv   : TEXCOORD0;
+};
+
+struct CSIN 
+{
+    uint3 groupthreadid     : SV_GroupThreadID;         
+    uint3 groupid           : SV_GroupID;            
+    uint3 dispatchthreadid  : SV_DispatchThreadID;     
+    uint threadid           : SV_GroupIndex;
 };
 
 /*=============================================================================
@@ -192,14 +201,6 @@ float3 from_hdr(float3 c)
     c = w * c * rcp(1 + c);
     return c;
 }
-
-/*
-float4 hash42(float2 p)
-{
-	float4 p4 = frac(p.xyxy * float4(0.1031, 0.1030, 0.0973, 0.1099));
-    p4 += dot(p4, p4.wzxy+33.33);
-    return frac((p4.xxyz+p4.yzzw)*p4.zywx);
-}*/
 
 #define to_linear(x)    ((x)*0.283799*((2.52405+(x))*(x)))
 #define from_linear(x)  (1.14374*(-0.126893*(x)+sqrt((x))))
@@ -273,84 +274,148 @@ float3 boxmuller(float3 u)
     return g * sqrt(-2.0 * log(1.0 - u.y));
 }
 
+uint morton2Dto1D(uint2 p)
+{    
+    p = (p | (p << 8)) & 0x00FF00FFu;
+    p = (p | (p << 4)) & 0x0F0F0F0Fu;
+    p = (p | (p << 2)) & 0x33333333u;
+    p = (p | (p << 1)) & 0x55555555u;
+    return p.x | (p.y << 1);
+}
+
 /*=============================================================================
 	Shader Entry Points
 =============================================================================*/
 
-VSOUT MainVS(in uint id : SV_VertexID)
+VSOUT AnalogGrainVS(in uint id : SV_VertexID)
 {
     VSOUT o;
     FullscreenTriangleVS(id, o.vpos, o.uv); //use original fullscreen triangle VS
+
+    if(GRAIN_TYPE != GRAIN_TYPE_ANALOG) 
+        o.vpos = asfloat(0x7F800000u); //NaN
+
     return o;
 }
 
-void PoissonLUTPS(in VSOUT i, out float4 o : SV_Target0)
-{ 
-    if(GRAIN_TYPE != GRAIN_TYPE_ANALOG) discard;
-    float p = uint(i.vpos.x) / (NUM_COLORS - 1.0);
-    p = filmic_curve(p, FILM_CURVE_TOE, FILM_CURVE_GAMMA).x; //insert the film curve here, do you see why? ;)
-    p = to_linear(p);
-    uint rng = lowbias32(uint(i.vpos.y)+ 2);
-    if(ANIMATE) rng += FRAMECOUNT;
-    uint num_grains = grain_intensity_to_halide_count();
+VSOUT DigitalSensorNoiseVS(in uint id : SV_VertexID)
+{
+    VSOUT o;
+    FullscreenTriangleVS(id, o.vpos, o.uv); //use original fullscreen triangle VS
 
-    o = 0;    
-    [loop]for(int g = 0; g < num_grains; g++) 
-        o += step(next_rand_lq(rng), p);
-        
-    o /= num_grains;
+    if(GRAIN_TYPE != GRAIN_TYPE_DIGITAL) 
+        o.vpos = asfloat(0x7F800000u); //NaN
+
+    return o;
 }
 
-void ApplyPoissonPS2(in VSOUT i, out float3 o : SV_Target0)
-{ 
-    if(GRAIN_TYPE != GRAIN_TYPE_ANALOG) discard;
+#define BATCH_SIZE 4
 
-    uint2 p = uint2(i.vpos.xy); 
-    uint rng = lowbias32(lowbias32(p.y) + p.x);
-    float4 rand01 = next_rand_lq(rng);
+void PoissonTableCS(in CSIN i)
+{
+    if(GRAIN_TYPE != GRAIN_TYPE_ANALOG) 
+        return;
+
+    uint trial = i.dispatchthreadid.y;
+   
+    uint rng = lowbias32(trial + 2); //so we don't hash 0
+    rng = ANIMATE ? rng + FRAMECOUNT : rng; 
+
+    float4 poisson_result[BATCH_SIZE];
+    float exposure_level[BATCH_SIZE];
+
+    [unroll]
+    for(uint j = 0u; j < BATCH_SIZE; j++)
+    {
+        uint color_idx = i.dispatchthreadid.x * BATCH_SIZE + j;
+        float c = color_idx / (NUM_COLORS - 1.0);
+        c = filmic_curve(c, FILM_CURVE_TOE, FILM_CURVE_GAMMA).x; //insert the film curve here, do you see why? ;)
+        c = to_linear(c);
+        
+        exposure_level[j] = c;
+        poisson_result[j] = 0;
+    }
+
+    uint num_grains = grain_intensity_to_halide_count();
+
+    [loop]
+    for(int g = 0; g < num_grains; g++) 
+    {
+        float4 rand_rgba = next_rand_lq(rng);
+        [unroll]
+        for(int j = 0; j < BATCH_SIZE; j++)
+            poisson_result[j] += step(rand_rgba, exposure_level[j].xxxx);
+    }
+
+    [unroll]
+    for(uint j = 0u; j < BATCH_SIZE; j++)
+    {
+        uint color_idx = i.dispatchthreadid.x * BATCH_SIZE + j;
+        tex2Dstore(stPoissonLookupTex, int2(color_idx, trial), poisson_result[j] / num_grains);
+    }
+}
+
+void AnalogGrainPS(in VSOUT i, out float4 o : SV_Target0)
+{ 
+    uint2 p = uint2(i.vpos.xy);
+    uint2 block = p % 32u;
+    uint2 tile  = p / 32u;
+    uint tile_rng = lowbias32(lowbias32(tile.y) + tile.x);
+
+    if(tile_rng & 1u)
+        block.x = 31u - block.x;
+    tile_rng >>= 1;
+    if(tile_rng & 1u)
+        block.y = 31u - block.y;
+    tile_rng >>= 1;
+    if(tile_rng & 1u)
+        block = block.yx;
+    tile_rng >>= 1;
+    uint row_idx = morton2Dto1D(block);  
+    row_idx += tile_rng;
+    row_idx %= NUM_TRIALS;
 
     float3 tcol = tex2Dfetch(ColorInput, p).rgb;
     float3 poisson = 0;
 
     [branch]
     if(FILM_MODE == FILM_MODE_COLOR)
-    {             
-        poisson.x = tex2Dlod(sPoissonLookupTex, float2(tcol.x, rand01.x), 0).x; 
-        poisson.y = tex2Dlod(sPoissonLookupTex, float2(tcol.y, rand01.y), 0).y; 
-        poisson.z = tex2Dlod(sPoissonLookupTex, float2(tcol.z, rand01.z), 0).z;
+    {
+        poisson.x = tex2Dfetch(sPoissonLookupTex, int2(tcol.x * NUM_COLORS * 0.99999, row_idx), 0).x;
+        poisson.y = tex2Dfetch(sPoissonLookupTex, int2(tcol.y * NUM_COLORS * 0.99999, row_idx), 0).y;
+        poisson.z = tex2Dfetch(sPoissonLookupTex, int2(tcol.z * NUM_COLORS * 0.99999, row_idx), 0).z;    
     }
     else 
     {
         float tgrey = from_linear(dot(to_linear(tcol), float3(0.2126729, 0.7151522, 0.072175)));
-        poisson = tex2Dlod(sPoissonLookupTex, float2(tgrey, rand01.x), 0).x;          
+        poisson = tex2Dfetch(sPoissonLookupTex, int2(tgrey * NUM_COLORS * 0.99999, row_idx)).x;         
     }
 
-    o = poisson;
-    o = from_linear(o);
+    o.rgb = poisson;
+    o.w = lowbias32(lowbias32(p.y) + p.x) & 1023u; //store well-representable random uint in alpha, for diffusion
+    //o = from_linear(o);
 }
 
 void FilmDiffusionPS(in VSOUT i, out float3 o : SV_Target0)
 {
-    if(GRAIN_TYPE != GRAIN_TYPE_ANALOG) discard;
-
     float2 gaussian = float2(1, 0.5 * lerp(0.1, 1.0, GRAIN_SIZE));
     float sigma = rsqrt(grain_intensity_to_halide_count());
 
     float wsum = 0;
     uint2 p = uint2(i.vpos.xy); 
-     o = 0;
+    o = 0;
 
     [unroll]for(int x = -1; x <= 1; x++)
     [unroll]for(int y = -1; y <= 1; y++)
     {
         uint2 tp = p + int2(x, y);
-        uint rng = lowbias32(lowbias32(tp.y) + tp.x);
-        float4 rand01 = next_rand_lq(rng);
-        float3 tcol = tex2Dfetch(sGrainIntermediateTex, tp).rgb;
-        tcol = to_linear(tcol);
+        float4 texel = tex2Dfetch(sGrainIntermediateTex, tp);
+        float3 tcol = texel.rgb;
+        uint rng = uint(texel.w);
 
+        float2 rand01 = float2(rng & 31u, rng >> 5u) / 32.0; //demux random bitfield into 2 shitty rng numbers        
         //random displacement to approximate average displacement of grains (gets lower as grains increase, until it converges to a regular lowpass)
-        float2 offs = float2(x, y) + boxmuller(rand01.zw) * sigma;
+        float2 offs = float2(x, y) + boxmuller(rand01) * sigma;
         float w = exp(-dot(offs, offs));   
         //lowpass weight    
         w *= gaussian[abs(x)] * gaussian[abs(y)];
@@ -381,7 +446,6 @@ void FilmDiffusionPS(in VSOUT i, out float3 o : SV_Target0)
 
 void ApplySensorNoisePS(in VSOUT i, out float3 o : SV_Target0)
 { 
-    if(GRAIN_TYPE != GRAIN_TYPE_DIGITAL) discard;
     o = tex2Dfetch(ColorInput, uint2(i.vpos.xy)).rgb;  
     o = to_linear(o);
 
@@ -434,30 +498,30 @@ technique MartyMods_FilmGrain
         "\n"       
         "______________________________________________________________________________";
 >
-{ 
-  
-    pass
-	{
-		VertexShader = MainVS;
-		PixelShader  = PoissonLUTPS;  
-        RenderTarget = PoissonLookupTex;
+{  
+    pass 
+    { 
+        ComputeShader = PoissonTableCS<NUM_COLORS / BATCH_SIZE, 1>;
+        DispatchSizeX = 1; 
+        DispatchSizeY = NUM_TRIALS;
     }
     pass
 	{
-		VertexShader = MainVS;        
-        PixelShader  = ApplyPoissonPS2; 
+		VertexShader = AnalogGrainVS;        
+        PixelShader  = AnalogGrainPS; 
         RenderTarget = GrainIntermediateTex; 
 	}
     pass
 	{
-		VertexShader = MainVS;        
+		VertexShader = AnalogGrainVS;        
         PixelShader  = FilmDiffusionPS;  
 	}     
     pass
 	{
-		VertexShader = MainVS;
+		VertexShader = DigitalSensorNoiseVS;
 		PixelShader  = ApplySensorNoisePS;  
-	}    
+	}
 }
+
 
 
