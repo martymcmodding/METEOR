@@ -300,7 +300,7 @@ void PostPS(in VSOUT i, out float4 o : SV_Target0)
 
 technique MartysMods_ChromaticAberration
 <
-    ui_label = "METEOR Chromatic Aberration";
+    ui_label = "METEOR: Chromatic Aberration";
     ui_tooltip =        
         "                        MartysMods - Chromatic Aberration                     \n"
         "                   Marty's Extra Effects for ReShade (METEOR)                 \n"

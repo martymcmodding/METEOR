@@ -53,25 +53,13 @@ uniform float STRENGTH <
     ui_min = -1.0;
     ui_max = 1.0;
 > = 0.0;
-/*
-uniform float4 tempF1 <
-    ui_type = "drag";
-    ui_min = -100.0;
-    ui_max = 100.0;
-> = float4(1,1,1,1);
 
-uniform float4 tempF2 <
-    ui_type = "drag";
-    ui_min = -100.0;
-    ui_max = 100.0;
-> = float4(1,1,1,1);
+uniform int INTERP <
+    ui_type = "combo";
+    ui_label = "Pyramid Upscaling";
+    ui_items = "Bilinear\0Bicubic\0";
+> = 0;
 
-uniform float4 tempF3 <
-    ui_type = "drag";
-    ui_min = -100.0;
-    ui_max = 100.0;
-> = float4(1,1,1,1);
-*/
 /*=============================================================================
 	Textures, Samplers, Globals, Structs
 =============================================================================*/
@@ -86,6 +74,8 @@ struct VSOUT
 };
 
 #include ".\MartysMods\mmx_global.fxh"
+#include ".\MartysMods\mmx_texture.fxh"
+
 
 #define RESOLUTION_DIV  2
 
@@ -117,7 +107,7 @@ struct VSOUT
 //smallest mip we want to generate, N less than the lowest possible mip
 //DO NOT CHANGE THIS -3 THING IT WILL BRICK IT TO SHITS, AND I WILL SHIT BRICKS (on you)
 //remember to add additional textures etc for this
-#define TARGET_MIP        ((LOWEST_MIP) - 4)
+#define TARGET_MIP        ((LOWEST_MIP) - 2)
 #define TARGET_MIP_SCALE  (1 << (TARGET_MIP))
 
 #define ATLAS_TILES_X   2
@@ -135,38 +125,56 @@ texture GaussianPyramidAtlasTexLevel0 { Width = (ATLAS_RESOLUTION_X)>>0; Height 
 sampler sGaussianPyramidAtlasTexLevel0 { Texture = GaussianPyramidAtlasTexLevel0;};
 
 #if TARGET_MIP >= 1
+texture GaussianPyramidAtlasTexLevel1Tmp { Width = (ATLAS_RESOLUTION_X)>>1; Height = (ATLAS_RESOLUTION_Y)>>0; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel1Tmp { Texture = GaussianPyramidAtlasTexLevel1Tmp;};
 texture GaussianPyramidAtlasTexLevel1 { Width = (ATLAS_RESOLUTION_X)>>1; Height = (ATLAS_RESOLUTION_Y)>>1; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel1 { Texture = GaussianPyramidAtlasTexLevel1;};
 #endif
 #if TARGET_MIP >= 2
+texture GaussianPyramidAtlasTexLevel2Tmp { Width = (ATLAS_RESOLUTION_X)>>2; Height = (ATLAS_RESOLUTION_Y)>>1; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel2Tmp { Texture = GaussianPyramidAtlasTexLevel2Tmp;};
 texture GaussianPyramidAtlasTexLevel2 { Width = (ATLAS_RESOLUTION_X)>>2; Height = (ATLAS_RESOLUTION_Y)>>2; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel2 { Texture = GaussianPyramidAtlasTexLevel2;};
 #endif
 #if TARGET_MIP >= 3
+texture GaussianPyramidAtlasTexLevel3Tmp { Width = (ATLAS_RESOLUTION_X)>>3; Height = (ATLAS_RESOLUTION_Y)>>2; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel3Tmp { Texture = GaussianPyramidAtlasTexLevel3Tmp;};
 texture GaussianPyramidAtlasTexLevel3 { Width = (ATLAS_RESOLUTION_X)>>3; Height = (ATLAS_RESOLUTION_Y)>>3; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel3 { Texture = GaussianPyramidAtlasTexLevel3;};
 #endif
 #if TARGET_MIP >= 4
+texture GaussianPyramidAtlasTexLevel4Tmp { Width = (ATLAS_RESOLUTION_X)>>4; Height = (ATLAS_RESOLUTION_Y)>>3; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel4Tmp { Texture = GaussianPyramidAtlasTexLevel4Tmp;};
 texture GaussianPyramidAtlasTexLevel4 { Width = (ATLAS_RESOLUTION_X)>>4; Height = (ATLAS_RESOLUTION_Y)>>4; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel4 { Texture = GaussianPyramidAtlasTexLevel4;};
 #endif
 #if TARGET_MIP >= 5
+texture GaussianPyramidAtlasTexLevel5Tmp { Width = (ATLAS_RESOLUTION_X)>>5; Height = (ATLAS_RESOLUTION_Y)>>4; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel5Tmp { Texture = GaussianPyramidAtlasTexLevel5Tmp;};
 texture GaussianPyramidAtlasTexLevel5 { Width = (ATLAS_RESOLUTION_X)>>5; Height = (ATLAS_RESOLUTION_Y)>>5; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel5 { Texture = GaussianPyramidAtlasTexLevel5;};
 #endif
 #if TARGET_MIP >= 6
+texture GaussianPyramidAtlasTexLevel6Tmp { Width = (ATLAS_RESOLUTION_X)>>6; Height = (ATLAS_RESOLUTION_Y)>>5; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel6Tmp { Texture = GaussianPyramidAtlasTexLevel6Tmp;};
 texture GaussianPyramidAtlasTexLevel6 { Width = (ATLAS_RESOLUTION_X)>>6; Height = (ATLAS_RESOLUTION_Y)>>6; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel6 { Texture = GaussianPyramidAtlasTexLevel6;};
 #endif
 #if TARGET_MIP >= 7
+texture GaussianPyramidAtlasTexLevel7Tmp { Width = (ATLAS_RESOLUTION_X)>>7; Height = (ATLAS_RESOLUTION_Y)>>6; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel7Tmp { Texture = GaussianPyramidAtlasTexLevel7Tmp;};
 texture GaussianPyramidAtlasTexLevel7 { Width = (ATLAS_RESOLUTION_X)>>7; Height = (ATLAS_RESOLUTION_Y)>>7; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel7 { Texture = GaussianPyramidAtlasTexLevel7;};
 #endif
 #if TARGET_MIP >= 8
+texture GaussianPyramidAtlasTexLevel8Tmp { Width = (ATLAS_RESOLUTION_X)>>8; Height = (ATLAS_RESOLUTION_Y)>>7; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel8Tmp { Texture = GaussianPyramidAtlasTexLevel8Tmp;};
 texture GaussianPyramidAtlasTexLevel8 { Width = (ATLAS_RESOLUTION_X)>>8; Height = (ATLAS_RESOLUTION_Y)>>8; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel8 { Texture = GaussianPyramidAtlasTexLevel8;};
 #endif
 #if TARGET_MIP >= 9
+texture GaussianPyramidAtlasTexLevel9Tmp { Width = (ATLAS_RESOLUTION_X)>>9; Height = (ATLAS_RESOLUTION_Y)>>8; Format = RGBA16F;};
+sampler sGaussianPyramidAtlasTexLevel9Tmp { Texture = GaussianPyramidAtlasTexLevel9Tmp;};
 texture GaussianPyramidAtlasTexLevel9 { Width = (ATLAS_RESOLUTION_X)>>9; Height = (ATLAS_RESOLUTION_Y)>>9; Format = RGBA16F;};
 sampler sGaussianPyramidAtlasTexLevel9 { Texture = GaussianPyramidAtlasTexLevel9;};
 #endif
@@ -177,17 +185,50 @@ sampler sCollapsedLaplacianPyramidTex { Texture = CollapsedLaplacianPyramidTex;}
 /*=============================================================================
 	Functions
 =============================================================================*/
+/*
+float get_optimal_exposure_bias(float c)
+{
+    float3 bounds = float3(-16, 16, 0);
+
+    c *= c;
+    c /= 1.0001 - c;   
+
+    [loop]
+    for(int j = 0; j < 32; j++)
+    {   
+        float tc = c * exp2(bounds.z);
+        float luma = tc / (1 + tc);
+        luma = sqrt(luma);
+        bounds.xy = luma > 0.5 ? bounds.xz : bounds.zy;
+        bounds.z = dot(bounds.xy, 0.5);
+    }
+
+    return bounds.z;
+}*/
 
 float remap_function(float x, float gaussian, float alpha)
 {   
     //first channel of first tile is unaltered gaussian pyramid
     [flatten]if(gaussian < 0) return x;
 
-    float range = 8.5;
-    float tx = x - saturate(gaussian);
-    alpha = alpha > 0 ? 2 * alpha : alpha;
-    x += exp(-tx * tx * range * range) * tx * alpha;
+/*
+    //gaussian is the average brightness.
+    float optimal_bias = get_optimal_exposure_bias(gaussian);
+
+    x *= x;
+    x /= 1.0001 - x;
+    x *= exp2(optimal_bias);
+    x /= 1.0 + x;
+    x = sqrt(x);
     return x;
+*/
+
+    alpha = alpha > 0 ? 2 * alpha : alpha;
+    gaussian = saturate(gaussian);
+    float delta = x - gaussian;
+    float w = saturate(1 - x * 2);
+    w *= w;     
+    return x + alpha * delta * exp(-delta * delta * 100.0) * saturate(1 - w * w);
 }
 
 #define degamma(_v) ((_v)*0.283799*((2.52405+(_v))*(_v)))
@@ -228,7 +269,7 @@ void InitPyramidAtlasPS(in VSOUT i, out float4 o : SV_Target0)
     float4 normalized_remapping_intervals = float4(curr_remapping_intervals) / (num_remapping_intervals - 1);
 
     float2 tile_uv = frac(i.uv * float2(ATLAS_TILES_X, ATLAS_TILES_Y));
-    float grey = get_luma(tex2D(ColorInput, tile_uv).rgb);
+    float grey = get_luma(tex2D(ColorInput, tile_uv).rgb);   
 
     float4 remapped;
     remapped.x = remap_function(grey, normalized_remapping_intervals.x, STRENGTH);
@@ -236,72 +277,83 @@ void InitPyramidAtlasPS(in VSOUT i, out float4 o : SV_Target0)
     remapped.z = remap_function(grey, normalized_remapping_intervals.z, STRENGTH);
     remapped.w = remap_function(grey, normalized_remapping_intervals.w, STRENGTH);
 
+    remapped = saturate(remapped);
     o = remapped;   
 }
 
-//so apparently, no matter what filter I use, I can just go in log2 steps
-//and it's fine. As the filter footprint doubles each pass, it will always make the same
-//of a structure twice a given size and one pass more.
-float4 tile_downsample(sampler s, float2 uv)
+//need pixel accurate blur since we need to mask pixel centers.
+float4 tile_downsample_new(sampler s, float2 uv, const bool horizontal)
 {
     float2 num_tiles = float2(ATLAS_TILES_X, ATLAS_TILES_Y);
+    const float2 tile_uv_size = rcp(num_tiles);
+    float2 tile_mid_uv = (floor(uv * num_tiles) + 0.5) * tile_uv_size;  
 
-    float4 boundaries;
-    boundaries.xy = floor(uv * num_tiles) / num_tiles;
-    boundaries.zw = boundaries.xy + rcp(num_tiles);    
-
-    float2 texelsize = rcp(tex2Dsize(s, 0));
-
-    float sigma = 2.0;
-    int samples = ceil(2 * sigma);
+    float2 texelsize = rcp(tex2Dsize(s, 0));   
+    float2 axis = horizontal ? float2(texelsize.x, 0) : float2(0, texelsize.y);
 
     float4 result = 0;
     float weightsum = 0;
-
-    [unroll]for(int x = -samples; x < samples; x++)
-    [unroll]for(int y = -samples; y < samples; y++)
+  
+    [unroll]for(int j = -4; j < 4; j++)
     {
-        float2 offset = float2(x + 0.5, y + 0.5);//halving lands us in the middle of 2x2 texels so sample texel centers accurately
-        float weight = exp(-dot(offset, offset) / (2 * sigma * sigma));
-        float2 tap_uv = uv + offset * texelsize;
-
-        weight = any(tap_uv < boundaries.xy) || any(tap_uv > boundaries.zw) ? 0 : weight;
-
-        //tap_uv = clamp(tap_uv, boundaries.xy, boundaries.zw);
+        float offset = (j + 0.5);
+        float w = exp(-offset * offset * 0.13);
+        float2 tap_uv = uv + axis * offset;
         float4 tap = tex2Dlod(s, tap_uv, 0);
-        result += tap * weight;
-        weightsum += weight;
+
+        //this compiles out
+        if(horizontal) 
+            w *= step(abs(tap_uv.x - tile_mid_uv.x), tile_uv_size.x * 0.5 - texelsize.x * 0.125); 
+        else 
+            w *= step(abs(tap_uv.y - tile_mid_uv.y), tile_uv_size.y * 0.5 - texelsize.y * 0.125);
+
+        tap *= tap;
+       
+        result += tap * w;
+        weightsum += w;
     }
 
-    return result / weightsum; //no need to use the prefactor of the gaussian PDF as it's resolved here anyhow
+    result *= rcp(weightsum);
+    result = sqrt(result);
+    return result;
 }
 
+
 #if TARGET_MIP >= 1
-void DownsamplePyramidsPS0(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel0, i.uv);}
+void DownsamplePyramidsPS0H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel0, i.uv, true);}
+void DownsamplePyramidsPS0V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel1Tmp, i.uv, false);}
 #endif
 #if TARGET_MIP >= 2
-void DownsamplePyramidsPS1(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel1, i.uv);}
+void DownsamplePyramidsPS1H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel1, i.uv, true);}
+void DownsamplePyramidsPS1V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel2Tmp, i.uv, false);}
 #endif
 #if TARGET_MIP >= 3
-void DownsamplePyramidsPS2(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel2, i.uv);}
+void DownsamplePyramidsPS2H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel2, i.uv, true);}
+void DownsamplePyramidsPS2V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel3Tmp, i.uv, false);}
 #endif
 #if TARGET_MIP >= 4
-void DownsamplePyramidsPS3(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel3, i.uv);}
+void DownsamplePyramidsPS3H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel3, i.uv, true);}
+void DownsamplePyramidsPS3V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel4Tmp, i.uv, false);}
 #endif
 #if TARGET_MIP >= 5
-void DownsamplePyramidsPS4(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel4, i.uv);}
+void DownsamplePyramidsPS4H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel4, i.uv, true);}
+void DownsamplePyramidsPS4V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel5Tmp, i.uv, false);}
 #endif
 #if TARGET_MIP >= 6
-void DownsamplePyramidsPS5(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel5, i.uv);}
+void DownsamplePyramidsPS5H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel5, i.uv, true);}
+void DownsamplePyramidsPS5V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel6Tmp, i.uv, false);}
 #endif
 #if TARGET_MIP >= 7
-void DownsamplePyramidsPS6(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel6, i.uv);}
+void DownsamplePyramidsPS6H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel6, i.uv, true);}
+void DownsamplePyramidsPS6V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel7Tmp, i.uv, false);}
 #endif
 #if TARGET_MIP >= 8
-void DownsamplePyramidsPS7(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel7, i.uv);}
+void DownsamplePyramidsPS7H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel7, i.uv, true);}
+void DownsamplePyramidsPS7V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel8Tmp, i.uv, false);}
 #endif
 #if TARGET_MIP >= 9
-void DownsamplePyramidsPS8(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample(sGaussianPyramidAtlasTexLevel8, i.uv);}
+void DownsamplePyramidsPS8H(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel8, i.uv, true);}
+void DownsamplePyramidsPS8V(in VSOUT i, out float4 o : SV_Target0){o = tile_downsample_new(sGaussianPyramidAtlasTexLevel9Tmp, i.uv, false);}
 #endif
 
 float sample_pyramid(sampler s, float2 uv, int pyramid_index)
@@ -321,7 +373,18 @@ float sample_pyramid(sampler s, float2 uv, int pyramid_index)
     float2 tile_end = float2(tile_id + 1) / num_tiles;
 
     float2 tile_uv = lerp(tile_start, tile_end, uv);
-    return tex2Dlod(s, tile_uv, 0)[channel];
+    float pyramid = 0;
+    
+    if(INTERP == 0)
+    {
+        pyramid = tex2Dlod(s, tile_uv, 0)[channel];
+    }
+    else 
+    {
+        pyramid = Texture::sample2D_bspline_auto(s, tile_uv)[channel];
+    }
+
+    return pyramid;
 }
 
 float eval_laplacian(sampler s_i, sampler s_iplus1, float2 uv, int level)
@@ -337,13 +400,11 @@ float eval_laplacian(sampler s_i, sampler s_iplus1, float2 uv, int level)
 
     //0 is reserved for the plain gaussian pyramid, so it's now 1 to 23
     lo_idx++;
-    hi_idx++;
+    hi_idx++; 
 
-    float laplacian_lo = sample_pyramid(s_i,      uv, lo_idx) 
-                       - sample_pyramid(s_iplus1, uv, lo_idx);
-    float laplacian_hi = sample_pyramid(s_i,      uv, hi_idx) 
-                       - sample_pyramid(s_iplus1, uv, hi_idx);
-    return lerp(laplacian_lo, laplacian_hi, interpolant);
+    float layer_a = lerp(sample_pyramid(s_i,      uv, lo_idx), sample_pyramid(s_i,      uv, hi_idx), interpolant);  
+    float layer_b = lerp(sample_pyramid(s_iplus1, uv, lo_idx), sample_pyramid(s_iplus1, uv, hi_idx), interpolant);      
+    return ((level + 1) == TARGET_MIP) ? layer_a : layer_a - layer_b;     
 }
 
 void CollapseTiledPyramidPS(in VSOUT i, out float2 o : SV_Target0)
@@ -379,39 +440,19 @@ void CollapseTiledPyramidPS(in VSOUT i, out float2 o : SV_Target0)
     collapsed += eval_laplacian(sGaussianPyramidAtlasTexLevel8, sGaussianPyramidAtlasTexLevel9, i.uv, 8);
 #endif 
 
-//residual at highest level
-#if TARGET_MIP == 1
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel1, i.uv, 0);
-#elif TARGET_MIP == 2
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel2, i.uv, 0);
-#elif TARGET_MIP == 3
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel3, i.uv, 0);
-#elif TARGET_MIP == 4
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel4, i.uv, 0);
-#elif TARGET_MIP == 5
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel5, i.uv, 0);
-#elif TARGET_MIP == 6
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel6, i.uv, 0);
-#elif TARGET_MIP == 7
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel7, i.uv, 0);     
-#elif TARGET_MIP == 8
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel8, i.uv, 0); 
-#elif TARGET_MIP == 9
-    collapsed += sample_pyramid(sGaussianPyramidAtlasTexLevel9, i.uv, 0); 
-#endif
     o.x = collapsed;
-    o.y = sample_pyramid(sGaussianPyramidAtlasTexLevel0, i.uv, 0); //store highest res gaussian pyramid for guided upsampling
+    o.y = get_luma(tex2D(ColorInput, i.uv).rgb);
 }
 
 void GuidedUpsamplingPS(in VSOUT i, out float3 o : SV_Target0)
 {    
-    float2 gaussian_sigma0dot7 = float2(0.5424, 0.2288);
+     float2 gaussian_sigma0dot7 = float2(0.5424, 0.2288);
 
     float4 moments = 0; //guide, guide^2, guide*signal, signal
     float ws = 0.0;
-
-    [unroll]for(int x = -1; x <= 1; x += 1)  
-    [unroll]for(int y = -1; y <= 1; y += 1)
+    
+    [unroll]for(int y = -1; y <= 1; y++)
+    [unroll]for(int x = -1; x <= 1; x++)  
     {
         float2 offs = float2(x, y);
         float2 t = tex2D(sCollapsedLaplacianPyramidTex, i.uv + offs * BUFFER_PIXEL_SIZE * RESOLUTION_DIV).xy;
@@ -435,7 +476,7 @@ void GuidedUpsamplingPS(in VSOUT i, out float3 o : SV_Target0)
     float ratioooo = adjusted_luma / (luma + 1e-6);
     o *= ratioooo;
     o = 1.1 * o / (1.0 + o);
-    o = regamma(o);
+    o = regamma(o);   
 }
 
 /*=============================================================================
@@ -445,7 +486,7 @@ void GuidedUpsamplingPS(in VSOUT i, out float3 o : SV_Target0)
 
 technique MartysMods_LocalLaplacian
 <
-    ui_label = "METEOR Local Laplacian";
+    ui_label = "METEOR: Local Laplacian";
     ui_tooltip =        
         "                          MartysMods - Local Laplacian                        \n"
         "                   Marty's Extra Effects for ReShade (METEOR)                 \n"
@@ -466,33 +507,46 @@ technique MartysMods_LocalLaplacian
     pass    {VertexShader = MainVS;PixelShader = InitPyramidAtlasPS; RenderTarget = GaussianPyramidAtlasTexLevel0; } 
 
 #if TARGET_MIP >= 1
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS0; RenderTarget = GaussianPyramidAtlasTexLevel1; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS0H; RenderTarget = GaussianPyramidAtlasTexLevel1Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS0V; RenderTarget = GaussianPyramidAtlasTexLevel1; } 
 #endif
 #if TARGET_MIP >= 2
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS1; RenderTarget = GaussianPyramidAtlasTexLevel2; }
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS1H; RenderTarget = GaussianPyramidAtlasTexLevel2Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS1V; RenderTarget = GaussianPyramidAtlasTexLevel2; } 
 #endif
 #if TARGET_MIP >= 3 
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS2; RenderTarget = GaussianPyramidAtlasTexLevel3; }
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS2H; RenderTarget = GaussianPyramidAtlasTexLevel3Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS2V; RenderTarget = GaussianPyramidAtlasTexLevel3; } 
 #endif
 #if TARGET_MIP >= 4 
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS3; RenderTarget = GaussianPyramidAtlasTexLevel4; }
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS3H; RenderTarget = GaussianPyramidAtlasTexLevel4Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS3V; RenderTarget = GaussianPyramidAtlasTexLevel4; } 
 #endif
 #if TARGET_MIP >= 5 
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS4; RenderTarget = GaussianPyramidAtlasTexLevel5; }
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS4H; RenderTarget = GaussianPyramidAtlasTexLevel5Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS4V; RenderTarget = GaussianPyramidAtlasTexLevel5; } 
 #endif
 #if TARGET_MIP >= 6 
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS5; RenderTarget = GaussianPyramidAtlasTexLevel6; }
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS5H; RenderTarget = GaussianPyramidAtlasTexLevel6Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS5V; RenderTarget = GaussianPyramidAtlasTexLevel6; } 
 #endif
 #if TARGET_MIP >= 7 
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS6; RenderTarget = GaussianPyramidAtlasTexLevel7; }
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS6H; RenderTarget = GaussianPyramidAtlasTexLevel7Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS6V; RenderTarget = GaussianPyramidAtlasTexLevel7; } 
 #endif
 #if TARGET_MIP >= 8 
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS7; RenderTarget = GaussianPyramidAtlasTexLevel8; }
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS7H; RenderTarget = GaussianPyramidAtlasTexLevel8Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS7V; RenderTarget = GaussianPyramidAtlasTexLevel8; } 
 #endif 
 #if TARGET_MIP >= 9 
-    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS8; RenderTarget = GaussianPyramidAtlasTexLevel9; }
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS8H; RenderTarget = GaussianPyramidAtlasTexLevel9Tmp; } 
+    pass    {VertexShader = MainVS;PixelShader = DownsamplePyramidsPS8V; RenderTarget = GaussianPyramidAtlasTexLevel9; } 
 #endif
     
     pass    {VertexShader = MainVS;PixelShader = CollapseTiledPyramidPS; RenderTarget = CollapsedLaplacianPyramidTex; }
     pass    {VertexShader = MainVS;PixelShader = GuidedUpsamplingPS; }
 }
+
+
+
+

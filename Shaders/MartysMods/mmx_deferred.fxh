@@ -23,12 +23,8 @@
 namespace Deferred 
 {
 //normals, RG8 octahedral encoded XY = gbuffer normals, ZW = geometry normals
-texture NormalsTexV3              { Width = BUFFER_WIDTH_DLSS;   Height = BUFFER_HEIGHT_DLSS;   Format = RGBA16;       };
-sampler sNormalsTexV3             { Texture = NormalsTexV3; MinFilter = POINT; MipFilter = POINT; MagFilter = POINT;};
-
-//motion vectors, RGBA16F, XY = delta uv, Z = confidence, W = depth because why not
-texture MotionVectorsTex        { Width = BUFFER_WIDTH;   Height = BUFFER_HEIGHT;   Format = RG16F;     };
-sampler sMotionVectorsTex       { Texture = MotionVectorsTex; };
+texture NormalsTexV3 { Width = BUFFER_WIDTH_DLSS; Height = BUFFER_HEIGHT_DLSS; Format = RGBA16; };
+sampler sNormalsTexV3 { Texture = NormalsTexV3; MinFilter = POINT; MipFilter = POINT; MagFilter = POINT; };
 
 float3 get_normals(float2 uv)
 {
@@ -42,6 +38,10 @@ float3 get_geometry_normals(float2 uv)
     return -Math::octahedral_dec(encoded);
 }
 
+//motion vectors, RGBA16F, XY = delta uv
+texture MotionVectorsTex { Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT; Format = RG16F; };
+sampler sMotionVectorsTex { Texture = MotionVectorsTex;};
+
 float2 get_motion(float2 uv)
 {
     return tex2Dlod(sMotionVectorsTex, uv, 0).xy;
@@ -50,6 +50,20 @@ float2 get_motion(float2 uv)
 float4 get_motion_wide(float2 uv)
 {
     return tex2Dlod(sMotionVectorsTex, uv, 0);
+}
+
+//keeping it HDR for now
+texture AlbedoTex { Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT; Format = RGBA16F; };
+sampler sAlbedoTex { Texture = AlbedoTex;};
+
+float3 get_albedo(float2 uv)
+{
+    return tex2Dlod(sAlbedoTex, uv, 0).rgb;
+}
+
+float3 fetch_albedo(int2 p)
+{
+    return tex2Dfetch(sAlbedoTex, p).rgb;
 }
 
 }

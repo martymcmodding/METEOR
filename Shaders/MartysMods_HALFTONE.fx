@@ -170,7 +170,7 @@ void MainPS(in VSOUT i, out float3 o : SV_Target0)
 
 technique MartyMods_Halftone
 <
-    ui_label = "METEOR Halftone";
+    ui_label = "METEOR: Halftone";
     ui_tooltip =        
         "                            MartysMods - Halftone                             \n"
         "                   Marty's Extra Effects for ReShade (METEOR)                 \n"

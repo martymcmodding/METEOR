@@ -40,23 +40,17 @@ float2 fast_sign(float2 x){return x >= 0.0.xx ? 1.0.xx : -1.0.xx;}
 float3 fast_sign(float3 x){return x >= 0.0.xxx ? 1.0.xxx : -1.0.xxx;}
 float4 fast_sign(float4 x){return x >= 0.0.xxxx ? 1.0.xxxx : -1.0.xxxx;}
 
-#if COMPUTE_SUPPORTED != 0
- #define fast_sqrt(_x) asfloat(0x1FBD1DF5 + (asint(_x) >> 1))
-#else 
- #define fast_sqrt(_x) sqrt(_x) //not bitwise shenanigans :(
-#endif
-
 float fast_acos(float x)                      
 {                                                   
     float o = -0.156583 * abs(x) + HALF_PI;
-    o *= fast_sqrt(1.0 - abs(x));              
+    o *= sqrt(1.0 - abs(x));              
     return x >= 0.0 ? o : PI - o;                   
 }
 
 float2 fast_acos(float2 x)                      
 {                                                   
     float2 o = -0.156583 * abs(x) + HALF_PI;
-    o *= fast_sqrt(1.0 - abs(x));              
+    o *= sqrt(1.0 - abs(x));              
     return x >= 0.0.xx ? o : PI - o;                   
 }
 

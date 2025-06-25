@@ -301,7 +301,7 @@ void MainPS(in VSOUT i, out float3 o : SV_Target0)
 
 technique MartysMods_NvidiaSharpen
 <
-    ui_label = "METEOR NVSharpen";
+    ui_label = "METEOR: NVSharpen";
     ui_tooltip =        
         "                             MartysMods - NVSharpen                           \n"
         "                   Marty's Extra Effects for ReShade (METEOR)                 \n"

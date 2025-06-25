@@ -56,14 +56,45 @@ float3 ray_uniform(float2 u, float3 n)
     return normalize(dir + n * 0.01);
 }
 
-//phase functions
-float3 sample_phase_henyey_greenstein(float3 wo, float g, float2 u)
+float2 boxmuller(float2 u)
+{
+    return sample_disc(float2(u.x, -2.0 * log(1 - u.y)));
+}
+
+float3 boxmuller3D(float3 u)
+{   
+    return sample_sphere(u.xy) * sqrt(-2.0 * log(u.z));
+}
+
+/*=============================================================================
+	Phase Functions
+=============================================================================*/
+
+float3 sample_phase_henyey_greenstein(float2 u, float g = 0.75)
 {
     float3 wi; sincos(TAU * u.y, wi.x, wi.y);
     float sqr = (1 - g * g) / (1 - g + 2 * g * u.x);    
     wi.z = (1 + g * g - sqr * sqr) / (2 * g); //cos(theta)
     wi.xy *= sqrt(saturate(1 - wi.z * wi.z)); //sin(theta)
-    return mul(wi, Math::base_from_vector(wo));
+    return wi;
+    //return mul(wi, Math::base_from_vector(wo)); //not its responsibility
+}
+
+//split off as many of the g terms as possible, faster than pow for constant g
+float henyey_greenstein_cdf(float cos_theta, float g = 0.75)
+{
+    float a = (rcp(g) - g) / 2;
+    float b = a * rcp(1 + g);
+    return rsqrt(1 + g * (g - 2 * cos_theta)) * a - b; //mad mad rsqrt mad
+}
+
+float henyey_greenstein_icdf(float x, float g = 0.75)
+{
+    float a = (rcp(g) - g) / 2;
+    float b = a * rcp(1 + g);
+    float c = a / (x + b);
+    float cos_theta = rcp(2 * g) * ((g * g + 1) - c * c);
+    return cos_theta;
 }
 
 /*=============================================================================

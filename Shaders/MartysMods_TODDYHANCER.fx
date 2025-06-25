@@ -606,6 +606,23 @@ void MainPS(in VSOUT i, out float3 o : SV_Target0)
 =============================================================================*/
 
 technique MartysMods_Toddyhancer
+<
+    ui_label = "METEOR: ToddyHancer";
+    ui_tooltip =        
+        "                            MartysMods - ToddyHancer                          \n"
+        "                   Marty's Extra Effects for ReShade (METEOR)                 \n"
+        "______________________________________________________________________________\n"
+        "\n"
+
+        "This is a direct port of the ToddyHancer 'mod' that became popular in 2017 but\n"
+        "was never released. I found the original files and it's essentially a SweetFX \n" 
+        "preset.                                                                       \n"      
+        "\n"
+        "\n"
+        "Visit https://martysmods.com for more information.                            \n"
+        "\n"       
+        "______________________________________________________________________________";
+>
 {    
     pass
 	{

@@ -158,6 +158,9 @@ uniform uint FRAMECOUNT < source = "framecount"; >;
 
 #include ".\MartysMods\mmx_global.fxh"
 #include ".\MartysMods\mmx_math.fxh"
+#include ".\MartysMods\mmx_hash.fxh"
+#include ".\MartysMods\mmx_bxdf.fxh"
+#include ".\MartysMods\mmx_sfc.fxh"
 
 struct VSOUT
 {
@@ -176,16 +179,6 @@ struct CSIN
 /*=============================================================================
 	Functions
 =============================================================================*/
-
-uint lowbias32(uint x)
-{
-    x ^= x >> 16;
-    x *= 0x7feb352dU;
-    x ^= x >> 15;
-    x *= 0x846ca68bU;
-    x ^= x >> 16;
-    return x;
-}
 
 #define WHITE_POINT 15.0
 
@@ -227,23 +220,14 @@ float3 filmic_curve(float3 x, float toe_strength, float gamma)
     return (gx + x) / (gx + 1);
 }
 
-float2 uint_to_rand_2(uint u)
-{
-    //move 16 bits into upper 16 bits of mantissa, mask out everything else, set exponent to 1, subtract 1.
-    return asfloat((uint2(u << 7u, u >> 9u) & 0x7fff80u) | 0x3f800000u) - 1.0;
-}
 
-//low quality advancing random generator, best initialized with something hq
 float4 next_rand_lq(inout uint rng)
 {
-    float4 rand;
-    //rng = rng * 1664525u + 1013904223u;//shitty lcg
-    rng = lowbias32(rng);
-    rand.xy = uint_to_rand_2(rng);    
-    //rng = rng * 1664525u + 1013904223u;
-    rng = lowbias32(rng);
-    rand.zw = uint_to_rand_2(rng);
-    return rand;
+    //need higher precision than 4x8b
+    float4 res;
+    res.xy = Hash::next2D(rng);
+    res.zw = Hash::next2D(rng);
+    return res;    
 }
 
 //grain intensity is more intuitive, however halide crystal count is what we need for the simulation
@@ -257,21 +241,6 @@ uint grain_intensity_to_halide_count()
 float grain_intensity_to_blend()
 {
     return saturate((1-(1-GRAIN_INTENSITY)*(1-GRAIN_INTENSITY)) * 2.0);
-}
-
-float2 boxmuller(float2 u)
-{
-    float2 g; sincos(u.x * TAU, g.x, g.y);
-    return g * sqrt(-2.0 * log(1.0 - u.y));//1-u cuz [0,1) -> (0,1] for log(0) = -inf
-}
-
-float3 boxmuller(float3 u)
-{
-    float3 g;    
-    g.z = u.y * 2.0 - 1.0;
-    sincos(u.x * TAU, g.x, g.y);
-    g.xy *= sqrt(saturate(1.0 - g.z * g.z));        
-    return g * sqrt(-2.0 * log(1.0 - u.y));
 }
 
 uint morton2Dto1D(uint2 p)
@@ -318,7 +287,7 @@ void PoissonTableCS(in CSIN i)
 
     uint trial = i.dispatchthreadid.y;
    
-    uint rng = lowbias32(trial + 2); //so we don't hash 0
+    uint rng = Hash::uhash(trial + 2); //so we don't hash 0
     rng = ANIMATE ? rng + FRAMECOUNT : rng; 
 
     float4 poisson_result[BATCH_SIZE];
@@ -360,7 +329,7 @@ void AnalogGrainPS(in VSOUT i, out float4 o : SV_Target0)
     uint2 p = uint2(i.vpos.xy);
     uint2 block = p % 32u;
     uint2 tile  = p / 32u;
-    uint tile_rng = lowbias32(lowbias32(tile.y) + tile.x);
+    uint tile_rng = Hash::uhash(Hash::uhash(tile.y) + tile.x);
 
     if(tile_rng & 1u)
         block.x = 31u - block.x;
@@ -371,7 +340,7 @@ void AnalogGrainPS(in VSOUT i, out float4 o : SV_Target0)
     if(tile_rng & 1u)
         block = block.yx;
     tile_rng >>= 1;
-    uint row_idx = morton2Dto1D(block);  
+    uint row_idx = SFC::morton_xy_to_i(block);  
     row_idx += tile_rng;
     row_idx %= NUM_TRIALS;
 
@@ -388,11 +357,11 @@ void AnalogGrainPS(in VSOUT i, out float4 o : SV_Target0)
     else 
     {
         float tgrey = from_linear(dot(to_linear(tcol), float3(0.2126729, 0.7151522, 0.072175)));
-        poisson = tex2Dfetch(sPoissonLookupTex, int2(tgrey * NUM_COLORS * 0.99999, row_idx)).x;         
+        poisson = tex2Dfetch(sPoissonLookupTex, int2(tgrey * NUM_COLORS * 0.99999, row_idx)).x; 
     }
 
     o.rgb = poisson;
-    o.w = lowbias32(lowbias32(p.y) + p.x) & 1023u; //store well-representable random uint in alpha, for diffusion
+    o.w = Hash::uhash(Hash::uhash(p.y) + p.x) & 1023u; //store well-representable random uint in alpha, for diffusion
     //o = from_linear(o);
 }
 
@@ -415,7 +384,7 @@ void FilmDiffusionPS(in VSOUT i, out float3 o : SV_Target0)
 
         float2 rand01 = float2(rng & 31u, rng >> 5u) / 32.0; //demux random bitfield into 2 shitty rng numbers        
         //random displacement to approximate average displacement of grains (gets lower as grains increase, until it converges to a regular lowpass)
-        float2 offs = float2(x, y) + boxmuller(rand01) * sigma;
+        float2 offs = float2(x, y) + BXDF::boxmuller(rand01) * sigma;
         float w = exp(-dot(offs, offs));   
         //lowpass weight    
         w *= gaussian[abs(x)] * gaussian[abs(y)];
@@ -450,12 +419,12 @@ void ApplySensorNoisePS(in VSOUT i, out float3 o : SV_Target0)
     o = to_linear(o);
 
     uint2 p = uint2(i.vpos.xy); 
-    uint rng = lowbias32(lowbias32(p.y) + p.x);
+    uint rng = Hash::uhash(Hash::uhash(p.y) + p.x);
     if(ANIMATE) rng += FRAMECOUNT;
     float3 u3 = next_rand_lq(rng).xyz;
 
     //3D box muller for 3 uncorrelated gaussian distributed noise values
-    float3 gaussian = boxmuller(u3);
+    float3 gaussian = BXDF::boxmuller3D(u3);
 
     [branch]
     if(FILM_MODE == FILM_MODE_COLOR)
@@ -483,7 +452,7 @@ void ApplySensorNoisePS(in VSOUT i, out float3 o : SV_Target0)
 
 technique MartyMods_FilmGrain
 <
-    ui_label = "METEOR Film Grain";
+    ui_label = "METEOR: Film Grain";
     ui_tooltip =        
         "                            MartysMods - Film Grain                           \n"
         "                   Marty's Extra Effects for ReShade (METEOR)                 \n"
