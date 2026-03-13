@@ -139,12 +139,24 @@ uniform float CANVAS_BG <
 uniform int CANVAS_GRID <
 	ui_type = "combo";
     ui_label = "Grid";
-	ui_items = " None \0 Rule of Thirds \0 Golden Spiral (Top Left) \0 Golden Spiral (Top Right) \0 Golden Spiral (Bottom Left) \0 Golden Spiral (Bottom Right) \0 Golden Spiral (Top Left Alt) \0 Golden Spiral (Top Right Alt) \0 Golden Spiral (Bottom Left Alt) \0 Golden Spiral (Bottom Right Alt) \0 ";
+	ui_items = "None\0" 
+               "Crosshair (2x2)\0"
+               "Rule of Thirds (3x3)\0"
+               "Phi Grid\0"
+               "Armature\0"
+               "Golden Spiral (Top Left)\0" 
+               "Golden Spiral (Top Right)\0" 
+               "Golden Spiral (Bottom Left)\0"
+               "Golden Spiral (Bottom Right)\0"
+               "Golden Spiral (Top Left Alt)\0"
+               "Golden Spiral (Top Right Alt)\0"
+               "Golden Spiral (Bottom Left Alt)\0"
+               "Golden Spiral (Bottom Right Alt)\0";               
     ui_tooltip = "Select an overlay grid to help you with the composition of your shot.";
     ui_category = SECTION_CANVAS;
 > = 0;
 
-uniform float CANVAS_RULEOFTHIRDS_ALPHA <
+uniform float CANVAS_GRID_ALPHA <
     ui_type = "drag";
     ui_label = "Grid Opacity";
     ui_min = 0.0;
@@ -153,6 +165,16 @@ uniform float CANVAS_RULEOFTHIRDS_ALPHA <
     ui_units = "%%";
     ui_category = SECTION_CANVAS;    
 > = 30.0;
+
+uniform float CANVAS_GRID_THICKNESS <
+    ui_type = "drag";
+    ui_label = "Grid Thickness";
+    ui_min = 1.0;
+    ui_max = 4.0;
+    ui_step = 1.0;
+    ui_units = "px";
+    ui_category = SECTION_CANVAS;
+> = 1.0;
 /*
 uniform float4 tempF1 <
     ui_type = "drag";
@@ -189,15 +211,19 @@ sampler2D sHotsampleStateTex {Texture = HotsampleStateTex;};
  #define PHI 1.61803398874989484820459
 #endif
 
-#define CANVAS_RULEOFTHIRDS 1 
-#define CANVAS_GS_TL        2
-#define CANVAS_GS_TR        3
-#define CANVAS_GS_BL        4
-#define CANVAS_GS_BR        5
-#define CANVAS_GS_TL_ALT    6
-#define CANVAS_GS_TR_ALT    7
-#define CANVAS_GS_BL_ALT    8
-#define CANVAS_GS_BR_ALT    9
+#define CANVAS_CROSSHAIR    1
+#define CANVAS_RULEOFTHIRDS 2 
+#define CANVAS_PHIGRID      3 
+#define CANVAS_ARMATURE     4
+#define CANVAS_GS_TL        5
+#define CANVAS_GS_TR        6
+#define CANVAS_GS_BL        7
+#define CANVAS_GS_BR        8
+#define CANVAS_GS_TL_ALT    9
+#define CANVAS_GS_TR_ALT    10
+#define CANVAS_GS_BL_ALT    11
+#define CANVAS_GS_BR_ALT    12
+
 
 
 struct VSOUT
@@ -293,6 +319,21 @@ float sdf_goldenspiral(float2 p)
     float2 d = a * exp(b * (t + TAU * floor(n + float2(1, 0)))) - r; 
     
     return minc(abs(d));
+}
+
+//completely analytic area-based line shading, no derivative tricks
+float aaline(float2 p, float2 p0, float2 p1, float thickness)
+{
+    float2 d = normalize(p1 - p0);
+    float2 n = float2(d.y, -d.x); 
+    float2 slopes = 2.0 * dot(n, p0 - p) + float2(thickness, -thickness);   
+    n = abs(n);
+    n = n.y < n.x ? n.yx : n; //sin | cos of theta
+    float2 s = -abs(slopes);
+    float2 t = max(0, s + n.x + n.y);
+    float2 cdf = s < (-n.y + n.x).xx ? t*t / (4.0 * n.x * n.y + 1e-8) : 1.0 + s / n.y;  
+    cdf = slopes < 0.0.xx ? cdf * 0.5 : 1 - 0.5 * cdf;
+    return abs(cdf.x - cdf.y); 
 }
 
 /*=============================================================================
@@ -404,19 +445,59 @@ void CanvasPS(in VSOUT i, out float3 o : SV_Target)
 {
     o = tex2Dlod(ColorInput, i.uv.xyyy).rgb;    
     float scaling = BUFFER_WIDTH / float(min(BUFFER_WIDTH, HOTSAMPLING_TARGET_RESOLUTION_X));
+    
+    //yes actually needs to be this way
+    float2 texelsize = float2(length(ddx(i.uv.zw)), length(ddy(i.uv.zw)));
+    texelsize = CANVAS_ROTATE ? texelsize.yx : texelsize;
+    float2 screensize = rcp(texelsize);
+    
+    float gridmask = 0;
+
     if(is_hotsampling_enabled() && any(i.vpos.xy >= BUFFER_SCREEN_SIZE / scaling))
-    {
+    {     
         discard;
     }
-    
-    if(CANVAS_GRID == CANVAS_RULEOFTHIRDS)
+    if(CANVAS_GRID == CANVAS_CROSSHAIR)
+    {
+        float2 griduv   = i.uv.zw - 0.5;
+        float2 gridline = smoothstep(0, -1, abs(griduv) * screensize - CANVAS_GRID_THICKNESS);
+        gridmask = saturate(dot(gridline, 1));
+    }    
+    else if(CANVAS_GRID == CANVAS_RULEOFTHIRDS)
     {
         float4 griduv   = (i.uv.zwzw - float2(1,2).xxyy / 3.0);
-        float2 aa       = float2(length(fwidth(griduv.xy)), length(fwidth(griduv.zw)));
-        float4 gridline = smoothstep(aa.xxyy, 0, abs(griduv));
+        float4 gridline   = smoothstep(0, -1, abs(griduv) * screensize.xyxy - CANVAS_GRID_THICKNESS);
 
-        o = lerp(o, dot(o, 0.3333) < 0.5, saturate(dot(gridline, 1)) * CANVAS_RULEOFTHIRDS_ALPHA * 0.01);
+        gridmask = saturate(dot(gridline, 1));
     }
+    else if(CANVAS_GRID == CANVAS_PHIGRID)
+    {
+        float4 griduv   = (i.uv.zwzw - float2(0.381967, 0.618033).xxyy);
+        float4 gridline   = smoothstep(0, -1, abs(griduv) * screensize.xyxy - CANVAS_GRID_THICKNESS);
+
+        gridmask = saturate(dot(gridline, 1));
+    }
+    else if(CANVAS_GRID == CANVAS_ARMATURE)
+    {
+        float2 P = i.uv.zw;        
+        P *= screensize;
+        
+        float thiccness = CANVAS_GRID_THICKNESS;
+        gridmask = aaline(P, float2(0, 0) * screensize, float2(1, 1) * screensize, thiccness);
+        gridmask = max(gridmask, aaline(P, float2(1, 0) * screensize, float2(0, 1) * screensize, thiccness));
+
+        gridmask = max(gridmask, aaline(P, float2(0, 0) * screensize, float2(0.5, 1) * screensize, thiccness));
+        gridmask = max(gridmask, aaline(P, float2(1, 0) * screensize, float2(0.5, 1) * screensize, thiccness));
+        gridmask = max(gridmask, aaline(P, float2(0, 1) * screensize, float2(0.5, 0) * screensize, thiccness));
+        gridmask = max(gridmask, aaline(P, float2(1, 1) * screensize, float2(0.5, 0) * screensize, thiccness));
+/*
+        gridmask = max(gridmask, aaline(P, float2(0, 0) * screensize, float2(1, 0.5) * screensize, thiccness));
+        gridmask = max(gridmask, aaline(P, float2(0, 1) * screensize, float2(1, 0.5) * screensize, thiccness));
+        gridmask = max(gridmask, aaline(P, float2(1, 0) * screensize, float2(0, 0.5) * screensize, thiccness));
+        gridmask = max(gridmask, aaline(P, float2(1, 1) * screensize, float2(0, 0.5) * screensize, thiccness));
+*/
+        gridmask = sqrt(gridmask);
+    }    
     else if(CANVAS_GRID >= CANVAS_GS_TL && CANVAS_GRID <= CANVAS_GS_BR_ALT)
     {
         float2 gruv = i.uv.zw * 2.0 - 1.0;
@@ -439,12 +520,14 @@ void CanvasPS(in VSOUT i, out float3 o : SV_Target)
         float sdf = sdf_goldenspiral(gruv);
         float dx = max(sdf_goldenspiral(gruv + ddx(gruv)), sdf_goldenspiral(gruv - ddx(gruv))) - sdf;
         float dy = max(sdf_goldenspiral(gruv + ddy(gruv)), sdf_goldenspiral(gruv - ddy(gruv))) - sdf;
-        sdf *= rsqrt(dx * dx + dy * dy);
+        sdf *= rsqrt(dx * dx + dy * dy) * 1.414;
 
-        sdf = smoothstep(sqrt(2), 0, sdf);
-        o = lerp(o, dot(o, 0.3333) < 0.5, sdf * CANVAS_RULEOFTHIRDS_ALPHA * 0.01);
+        sdf = smoothstep(0.5, -0.5, sdf - CANVAS_GRID_THICKNESS);
+        gridmask = sdf;
     }
 
+    const float threshold = 0.735; //use gamma corrected threshold
+    o = lerp(o, dot(o, float3(0.299, 0.587, 0.114)) < threshold, gridmask * CANVAS_GRID_ALPHA * 0.01);
     o = lerp(CANVAS_BG * 0.01, o, all(saturate(i.uv.zw - i.uv.zw * i.uv.zw)));
 }
 
